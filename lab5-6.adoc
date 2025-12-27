@@ -1,0 +1,719 @@
+:toc:
+:toc-title: Оглавление
+:figure-caption: Рисунок
+:stem:
+:sectnums:
+= Лабораторная работа №5
+
+[.text-right]
+Автор работы: Студент группы КЭ-413 +
+А.М. Жуламанова
+
+== Цель лабораторной работы
+
+Создать систему, представляющую собой контроллер для управления группой светодиодов с поддержкой нескольких режимов работы. Архитектура построена на основе объектно-ориентированного подхода с четким разделением ответственности между компонентами.
+
+Реализовать три режима работы:
+
+* **RunningLightMode** — последовательное переключение светодиодов (режим "бегущий огонь");
+* **FadeGlowMode** — синхронное управление всеми светодиодами;  
+* **ChessMode** — попеременное включение светодиодов в шахматном порядке;
+
+== Выполнение лабораторной работы
+
+Цель - создать программу, позволяющая включать и выключать диоды.
+
+=== Основной рабочий цикл
+
+[source,cpp]
+----
+#include "iostream"//for std::cout
+#include "rccregisters.hpp" // for RCC
+#include "gpioaregisters.hpp" // for GPIOA
+#include "gpiocregisters.hpp" // for GPIOÑ
+#include <array>// for std::array
+#include "Led.h" // for Led, ILedToggable, ILedOnOff
+#include "OptimizedLed.h" // for OptimizedLed
+#include "CommonMode.h"
+#include "RunningLightMode.h"
+#include "FadeGlowMode.h"
+#include "ChessMode.h"
+#include "UserButton.h"
+#include "ModeController.h"
+
+
+std::uint32_t SystemCoreClock = 16'000'000U;
+
+extern "C" {
+int __low_level_init(void)
+{
+  //Switch on external 16 MHz oscillator
+  RCC::CR::HSION::On::Set();
+  while (RCC::CR::HSIRDY::NotReady::IsSet())
+  {
+
+  }
+  //Switch system clock on external oscillator
+  RCC::CFGR::SW::Hsi::Set();
+  while (!RCC::CFGR::SWS::Hsi::IsSet())
+  {
+
+  }
+  
+  RCC::APB2ENR::SYSCFGEN::Enable::Set();
+
+  return 1;
+}
+}
+
+
+void delay(int cycles)
+{
+  for(int i = 0; i < cycles; ++i)    
+  {
+    asm volatile("");
+  }    
+}
+
+constexpr std::uint32_t buttonPinNum = 13;
+constexpr std::uint32_t portCIdrAddress = 0x40020810U;
+UserButton userButton(buttonPinNum, portCIdrAddress);
+
+Led led1(5, 0x40020814U);
+Led led2(8, 0x40020814U);
+Led led3(9, 0x40020814U);
+//Led led4(5, 0x40020014U);
+OptimizedLed<0x40020014U, 5> led4;
+
+tLeds leds = 
+{
+  &led1,
+  &led2,
+  &led3,
+  &led4
+};
+
+tLedsOnOff ledsOnOff = 
+{
+  &led1,
+  &led2,
+  &led3,
+  &led4
+};
+
+RunningLightMode runningLightMode(leds, ledsOnOff);
+FadeGlowMode fadeGlowMode(leds, ledsOnOff);
+ChessMode chessMode(leds, ledsOnOff);
+
+
+tModes modes
+{
+  &runningLightMode,
+  &fadeGlowMode,
+  &chessMode
+};
+
+ModeController modeController(modes);
+
+int main()
+{ 
+ 
+  //Ïîäàòü òàêòèðîâàíèå íà ïîðò À
+  RCC::AHB1ENR::GPIOAEN::Enable::Set() ;
+  //Ïîäàòü òàêòèðîâàíèå íà ïîðò Ñ
+  RCC::AHB1ENR::GPIOCEN::Enable::Set() ;
+  //Ïîðòà À.5 íà âûâîä
+  GPIOA::MODER::MODER5::Output::Set() ;
+  //Ïîðòà C.5,C.8, C.9 íà âûâîä
+  GPIOC::MODER::MODER5::Output::Set() ;
+  GPIOC::MODER::MODER8::Output::Set() ;
+  GPIOC::MODER::MODER9::Output::Set() ;
+  
+  for(;;)
+  {   
+    if (userButton.WasPressed())
+    {
+      modeController.SwitchMode(); 
+    }
+    delay(500000);
+    modeController.RunCurrentMode(); 
+  }
+  return 1;
+}
+----
+
+== Описание архитектуры и функциональности кода
+
+=== Структура и взаимодействие компонентов
+
+Данная программная реализация обеспечивает управление светодиодами с помощью пользовательской кнопки и поддерживает несколько режимов работы. Архитектура проекта построена на модульном принципе и включает четыре основные группы компонентов, организованных как пары "интерфейс — класс реализации":
+
+* Управление светодиодами:
+  ** Интерфейсы: ILedToggable (для переключения состояния) и ILedOnOff (для включения/выключения).
+  ** Классы реализации: Led и OptimizedLed. Эти классы инкапсулируют логику управления отдельными светодиодами, взаимодействуя с аппаратными пинами.
+
+* Кнопка:
+  ** Интерфейс: IButton.
+  ** Класс реализации: UserButton. Отвечает за обработку состояния физической кнопки и ее событий.
+
+* Режимы работы:
+  ** Интерфейс: IMode.
+  ** Классы реализации: CommonMode, RunningLightMode, ChessMode, GlowFadeMode. Каждый класс реализует специфический алгоритм управления светодиодами (например, "шахматка", "бегущий огонь", "плавное затухание/зажигание").
+
+* Контроллер режимов:
+  ** Интерфейс: IController.
+  ** Класс реализации: ModeController. Отвечает за централизованное управление сменой активного режима.
+
+=== Принцип работы:
+
+Инициализация светодиодов:: Создаются экземпляры объектов светодиодов, каждый из которых привязывается к определённому адресу порта и номеру пина. Эти объекты затем добавляются в одну или несколько коллекций (массивов) для группового управления.
+Инициализация режимов:: Для каждого режима создается свой объект, который принимает в качестве входных параметров коллекции светодиодов, которыми он будет управлять. На данный момент реализовано три основных режима: "Шахматка", "Включить/выключить" (видимо, базовый для всех диодов) и "Бегущий огонь".
+Инициализация кнопки:: Объект кнопки также создается с привязкой к адресу порта и номеру пина. Нажатия на эту кнопку служат триггером для переключения режимов.
+Управление режимами:: Компонент ModeController обеспечивает гибкую и расширяемую логику смены режимов. Благодаря использованию интерфейса IController, добавление новых режимов не требует модификации кода самого контроллера, что соответствует принципам открытости/закрытости (Open/Closed Principle) SOLID.
+
+=== Выявленные области для оптимизации и рекомендации для будущих разработок
+
+В процессе разработки были идентифицированы следующие аспекты, которые можно улучшить или учесть при создании следующих версий проекта:
+
+Избыточность интерфейсов:: Изначально был создан дополнительный интерфейс ILedOnOff исключительно для функций включения/выключения. Это решение привело к некоторой избыточности. В будущем рекомендуется более тщательно проектировать интерфейсы, чтобы избежать дублирования функционала и следовать принципу разделения интерфейса (Interface Segregation Principle из SOLID), объединяя связанные методы в одном интерфейсе, если это оправдано.
+Организация файлов:: Для улучшения читаемости, сопровождаемости и ускорения компиляции больших проектов, целесообразно сразу выделять каждый класс в отдельный заголовочный (.h) и исходный (.cpp) файл. Это упрощает навигацию по проекту и управление зависимостями.
+Оптимизация использования памяти для объектов светодиодов:: Для проектов, ориентированных на микроконтроллеры с ограниченными ресурсами, создание объектов светодиодов с использованием шаблонов C++ или более низкоуровневых конструкций (например, структур с функциями-членами, имитирующими объектно-ориентированное поведение) могло бы значительно сократить объем оперативной памяти, выделяемой под каждый экземплед светодиода, а также уменьшить размер генерируемого кода за счет устранения виртуальных таблиц и оптимизации на этапе компиляции. Этот подход был рассмотрен как более предпочтительный, но не был реализован в текущей версии.
+
+== Приложения
+
+=== UML-диаграмма
+
+.UML-диаграмма
+image::UML.png[]
+
+=== Полный исходный код программы
+
+[source,cpp]
+----
+#include "iostream"//for std::cout
+#include "rccregisters.hpp" // for RCC
+#include "gpioaregisters.hpp" // for GPIOA
+#include "gpiocregisters.hpp" // for GPIO�
+#include <array>// for std::array
+#include "UserButton.h" // for IButton, UserButton
+#include "ModeController.h" // for IController, ModeController
+#include "ModeConfig.h" // for modes
+
+std::uint32_t SystemCoreClock = 16'000'000U;
+
+extern "C" {
+int __low_level_init(void)
+{
+  //Switch on external 16 MHz oscillator
+  RCC::CR::HSION::On::Set();
+  while (RCC::CR::HSIRDY::NotReady::IsSet())
+  {
+
+  }
+  //Switch system clock on external oscillator
+  RCC::CFGR::SW::Hsi::Set();
+  while (!RCC::CFGR::SWS::Hsi::IsSet())
+  {
+
+  }
+  
+  RCC::APB2ENR::SYSCFGEN::Enable::Set();
+
+  return 1;
+}
+}
+
+void delay(int cycles)
+{
+  for(int i = 0; i < cycles; ++i)    
+  {
+    asm volatile("");
+  }    
+}
+
+constexpr std::uint32_t buttonPinNum = 13;
+constexpr std::uint32_t portCIdrAddress = 0x40020810U;
+UserButton userButton(buttonPinNum, portCIdrAddress);
+
+ModeController modeController(modes);
+
+int main()
+{ 
+  //������ ������������ �� ���� �
+  RCC::AHB1ENR::GPIOAEN::Enable::Set() ;
+  //������ ������������ �� ���� �
+  RCC::AHB1ENR::GPIOCEN::Enable::Set() ;
+  //����� �.5 �� �����
+  GPIOA::MODER::MODER5::Output::Set() ;
+  //����� C.5,C.8, C.9 �� �����
+  GPIOC::MODER::MODER5::Output::Set() ;
+  GPIOC::MODER::MODER8::Output::Set() ;
+  GPIOC::MODER::MODER9::Output::Set() ;
+  
+  for(;;)
+  {   
+    
+    if (userButton.WasPressed())
+    {
+      modeController.SwitchMode(); 
+    }
+    delay(500000);
+    modeController.RunCurrentMode(); 
+
+  }
+  return 1;
+}
+----
+
+=== IButton.h
+
+[source,cpp]
+----
+#if !defined(IBUTTON_H)
+#define IBUTTON_H
+
+class IButton
+{
+public:
+  virtual bool WasPressed() const = 0;
+};
+
+#endif
+----
+
+=== UserButton.cpp
+
+[source,cpp]
+----
+#include "UserButton.h"
+#include <cassert>
+
+UserButton::UserButton(std::uint32_t pinNum, std::uint32_t registerAddress):
+    mPinNum(pinNum),
+    mRegisterAddress(registerAddress)
+    {
+    
+    }
+bool UserButton::WasPressed() const
+{
+  bool isButtonPressed = ((*reinterpret_cast<std::uint32_t*>(mRegisterAddress) & (1 << mPinNum)) == 0);
+  return isButtonPressed;
+}
+----
+
+=== UserButton.h
+
+[source,cpp]
+----
+#if !defined(USERBUTTON_H)
+#define USERBUTTON_H
+#include "IButton.h" // for IButton
+#include "cstdint" // for uint32_t
+
+class UserButton : public IButton
+{
+public:
+  UserButton(std::uint32_t pinNum, std::uint32_t registerAddress);
+  bool WasPressed() const override;
+private:
+  std::uint32_t mRegisterAddress;
+  std::uint32_t mPinNum;
+};
+
+#endif
+----
+
+=== IController.h
+
+[source,cpp]
+----
+#if !defined(ICONTROLLER_H)
+#define ICONTROLLER_H
+
+class IController
+{
+public:
+  virtual void SwitchMode() = 0;
+  virtual void RunCurrentMode() = 0;
+};
+
+#endif
+----
+
+=== ModeController.cpp
+
+[source,cpp]
+----
+#include "ModeController.h"
+#include "IMode.h"
+#include <cassert>
+#include "IController.h" // for IController
+#include "ILedToggable.h" // for ILedToggable
+#include "ILedOnOff.h" // for ILedOnOff
+#include "LedConfig.h"
+
+ModeController::ModeController(const tModes& modes):
+    mModes(modes),
+    mCurrentMode(0)
+    {
+      
+    }
+    void ModeController::SwitchMode() 
+{
+  mCurrentMode++;
+    if (mCurrentMode == std::size(mModes))
+    {
+      mCurrentMode = 0;
+    }
+    mModes[mCurrentMode]->Init();
+}
+void ModeController::RunCurrentMode() 
+{
+  mModes[mCurrentMode]->Execute();
+}
+----
+
+=== ModeController.h
+
+
+[source,cpp]
+----
+#if !defined(MODECONTROLLER_H)
+#define MODECONTROLLER_H
+#include "IController.h" // for IController
+#include "IMode.h"
+#include <cstdint> // for std::uint32_t
+#include "ModeConfig.h"// for tModes
+
+class ModeController: public IController
+{
+public:
+  ModeController(const tModes& modes);
+    void SwitchMode() override;
+    void RunCurrentMode() override;
+private:
+  const tModes mModes;
+  std::uint32_t mCurrentMode;
+};
+
+#endif
+----
+
+=== ILedOnOff.h
+
+[source,cpp]
+----
+#if !defined(ILEDTONOFF_H)
+#define ILEDTONOFF_H
+#include <array>// for std::array
+
+class ILedOnOff 
+{
+public:
+  virtual void On() const = 0;
+  virtual void Off() const = 0;
+};
+
+#endif // ILEDTONOFF_H
+----
+
+=== Led.h
+
+[source,cpp]
+----
+#if !defined(LED_H)
+#define LED_H
+#include "ILedToggable.h" // for ILedToggable
+#include "ILedOnOff.h" // for ILedOnOff
+#include <cstdint> // for std::uint32_t
+
+class Led: public ILedToggable, public ILedOnOff //child class
+  {
+  public:
+    Led(std::uint32_t pinNum, std::uint32_t registerAddress); //its own method
+    void Toggle() const override; 
+    void On () const override;
+    void Off () const override;
+  private:
+    std::uint32_t mPinNum;
+    std::uint32_t* const mRegisterPtr;
+    
+  };
+  #endif // LED_H
+----
+
+=== Led.cpp
+
+[source,cpp]
+----
+#include "Led.h"
+#include <cassert>
+
+Led::Led(std::uint32_t pinNum, std::uint32_t registerAddress): //its own method
+      mPinNum(pinNum), // number of pin
+      mRegisterPtr(reinterpret_cast<std::uint32_t*>(registerAddress)) //address of pins
+    {
+      
+    }
+    
+    void Led::Toggle() const 
+    {
+      assert(mPinNum <= 15);
+      *mRegisterPtr ^= (1 << mPinNum); //switches on and of using number of pin
+    }
+    
+    void Led::On () const 
+    {
+      *mRegisterPtr |= (1 << mPinNum);
+    }
+    void Led::Off () const 
+    {
+      *mRegisterPtr &= ~(1 << mPinNum);
+    }
+----
+
+=== OptimizedLed.h
+
+[source,cpp]
+----
+#if !defined(OPTIMIZEDLED_H)
+#define OPTIMIZEDLED_H
+#include "ILedToggable.h" // for ILedToggable
+#include "ILedOnOff.h" // for ILedOnOff
+#include <cstdint> // for std::uint32_t
+
+template <std::uint32_t registerAddress, std::uint32_t pinNum>
+class OptimizedLed: public ILedToggable, public ILedOnOff //child class
+{
+public:
+  void Toggle() const override
+  {
+    static_assert(pinNum <= 15, "????? ???? ?? ????? ???? ?????? 15");
+    auto const ptrRegister = reinterpret_cast<volatile std::uint32_t*>(registerAddress);
+    *ptrRegister ^= (1U << pinNum);
+  }
+  void On () const override
+  {
+    static_assert(pinNum <= 15, "????? ???? ?? ????? ???? ?????? 15");
+    auto const ptrRegister = reinterpret_cast<volatile std::uint32_t*>(registerAddress);
+    *ptrRegister |= (1U << pinNum);
+  }
+  void Off () const override
+  {
+    static_assert(pinNum <= 15, "????? ???? ?? ????? ???? ?????? 15");
+    auto const ptrRegister = reinterpret_cast<volatile std::uint32_t*>(registerAddress);
+    *ptrRegister &= ~(1U << pinNum);
+  }
+};
+#endif // OPTIMIZEDLED_H
+
+----
+
+=== ChessMode.cpp
+
+[source,cpp]
+----
+#include "ChessMode.h"
+#include <cassert>
+#include "ILedToggable.h" // for ILedToggable
+#include "ILedOnOff.h" // for ILedOnOff
+
+
+ChessMode::ChessMode(const tLeds& leds, const tLedsOnOff& ledsOnOff):
+  CommonMode(leds, ledsOnOff)
+    {
+      
+    }
+void ChessMode::Init()
+  {
+    mCurrentLedNumber = 0;
+    for (auto it: mLedsOnOff)
+    {
+      mCurrentLedNumber++;
+      (mCurrentLedNumber % 2 == 0) ? it->Off() : it->On(); //тернарная операция
+    }
+  }
+void ChessMode::Execute()
+  {
+    mCurrentLedNumber = 0;
+    for(auto it: mLeds)
+    {
+      mLeds[mCurrentLedNumber++]->Toggle();
+      if (mCurrentLedNumber == std::size(mLeds))
+      {
+        mCurrentLedNumber = 0;
+      }
+    }
+  }
+----
+
+=== ChessMode.h
+
+[source,cpp]
+----
+#if !defined(CHESSMODE_H)
+#define CHESSMODE_H
+#include "CommonMode.h"
+#include "ILedToggable.h" // for ILedToggable
+#include "ILedOnOff.h" // for ILedOnOff
+#include "LedConfig.h" // for tLeds, for tLedsOnOff
+
+class ChessMode : public CommonMode // MODE 3
+{
+public:
+  ChessMode(const tLeds& leds, const tLedsOnOff& ledsOnOff);
+  void Init() override;
+  void Execute() override;
+};
+
+#endif
+----
+
+=== CommonMode.cpp
+
+[source,cpp]
+----
+#include "CommonMode.h"
+#include "Led.h"
+#include <cassert>
+#include "ILedToggable.h" // for ILedToggable
+#include "ILedOnOff.h" // for ILedOnOff
+
+CommonMode::CommonMode(const tLeds& leds, const tLedsOnOff& ledsOnOff):
+    mLeds(leds),
+    mLedsOnOff(ledsOnOff),
+    mCurrentLedNumber(0)
+    {
+      
+    }
+void CommonMode::Init()
+    {
+      mCurrentLedNumber = 0;
+      for (auto it: mLedsOnOff)
+      {
+        it->Off();
+      }
+    }
+----
+
+=== CommonMode.h
+
+[source,cpp]
+----
+#if !defined(COMMONMODE_H)
+#define COMMONMODE_H
+#include "IMode.h" //for IMode
+#include <cstdint> //for std::uint32_t
+#include "ILedToggable.h" // for ILedToggable
+#include "ILedOnOff.h" // for ILedOnOff
+#include "LedConfig.h" // for tLeds, for tLedsOnOff
+
+class CommonMode: public IMode
+{
+public:
+  CommonMode(const tLeds& leds, const tLedsOnOff& ledsOnOff);
+  void Init() override;
+protected:
+  const tLeds& mLeds;
+  const tLedsOnOff& mLedsOnOff; 
+  std::uint32_t mCurrentLedNumber;
+};
+#endif
+----
+=== FadeGlowMode.cpp
+
+[source,cpp]
+----
+#include "FadeGlowMode.h"
+#include <cassert>
+#include "ILedToggable.h" // for ILedToggable
+#include "ILedOnOff.h" // for ILedOnOff
+
+
+FadeGlowMode::FadeGlowMode(const tLeds& leds, const tLedsOnOff& ledsOnOff):
+CommonMode(leds, ledsOnOff)
+    {
+      
+    }
+    
+void FadeGlowMode::Execute()
+{
+  for(auto it: mLeds)
+  {
+    it->Toggable();
+  }
+}
+----
+
+=== FadeGlowMode.h
+
+[source,cpp]
+----
+#if !defined(FADEGLOWMODE_H)
+#define FADEGLOWMODE_H
+#include "CommonMode.h"
+#include "ILedToggable.h" // for leds
+#include "ILedOnOff.h" // for ledsOnOff
+#include "LedConfig.h" // for tLeds, for tLedsOnOff
+
+class FadeGlowMode : public CommonMode // MODE 2
+{
+public:
+  FadeGlowMode(const tLeds& leds, const tLedsOnOff& ledsOnOff);
+  void Execute() override;
+};
+
+#endif
+----
+
+=== RunningLightMode.cpp
+
+[source,cpp]
+----
+#include <cassert>
+#include "RunningLightMode.h"
+#include "ILedToggable.h" // for ILedToggable
+#include "ILedOnOff.h" // for ILedOnOff
+
+
+RunningLightMode::RunningLightMode(const tLeds& leds, const tLedsOnOff& ledsOnOff):
+    CommonMode(leds, ledsOnOff)
+    {
+      
+    }
+void RunningLightMode::RunningLightMode::Execute()
+    {
+      mLeds[mCurrentLedNumber++]->Toggle();
+      if (mCurrentLedNumber == std::size(mLeds))
+      {
+        mCurrentLedNumber = 0;
+      }
+    }
+  
+
+----
+
+=== RunningLightMode.h
+
+[source,cpp]
+----
+#if !defined(RUNNINGLIGHTMODE_H)
+#define RUNNINGLIGHTMODE_H
+#include "CommonMode.h"
+#include "ILedToggable.h" // for ILedToggable
+#include "ILedOnOff.h" // for ILedOnOff
+#include "LedConfig.h" // for tLeds, tLedsOnOff
+
+class RunningLightMode : public CommonMode // MODE 1
+{
+public:
+  RunningLightMode(const tLeds& leds, const tLedsOnOff& ledsOnOff);
+  void Execute() override;
+};
+
+#endif
+----
+
+== Заключение
+
+В ходе работы над данным проектом была успешно реализована архитектура управления светодиодами, обеспечивающая гибкое переключение между различными режимами работы по нажатию кнопки. Центральным элементом системы является композиция из интерфейсов и классов, инкапсулирующих логику управления аппаратными компонентами (светодиодами, кнопками) и алгоритмами режимов. 
