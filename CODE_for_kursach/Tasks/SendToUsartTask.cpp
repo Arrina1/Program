@@ -20,3 +20,4 @@ SendToUsartTask::SendToUsartTask(OsWrapper::Mutex& mutex, DataRepository& repos,
       SleepUntil(mTime);
     }
   }
+  

@@ -19,3 +19,4 @@ float DataADC::GetData()
   float data = static_cast<float>(ADC1::JDR1::JDATA::Get());
   return data;
 }
+

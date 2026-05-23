@@ -23,3 +23,4 @@ TakeMeasurementTask::TakeMeasurementTask(IADC& adc, DataRepository& repos, IFilt
       SleepUntil(mTime);
     }
   }
+  

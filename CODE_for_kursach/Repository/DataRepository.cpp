@@ -15,3 +15,4 @@ DataRepository::DataRepository():
   {
     mData = data;
   }
+  

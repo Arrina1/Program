@@ -12,3 +12,4 @@ Filter::Filter():
     mFilteredAngle = mFilteredAngle  + tau*(angleNotFiltered - mFilteredAngle);
     return mFilteredAngle;
   }
+  
