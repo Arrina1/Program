@@ -590,46 +590,29 @@ image::итоговый дизайн.png[]
 * float GetData()::считывает код АЦП из регистра данных и возвращает значение в формате float.
  
 
-.IADC.h
-[source, cpp]
-----
-include::CODE_for_kursach/ADC/Contracts/IADC.h[]
-----
+IADC - интерфейс, отвечает за снятие данных, объявляет функции для снятия данных и их возвращения.
 
-.IDataADC.h
-[source, cpp]
-----
-include::CODE_for_kursach/ADC/DataADC.h[]
-----
+.IADC
+image::IADC.png[] 
 
-.IDataADC.cpp
-[source, cpp]
-----
-include::CODE_for_kursach/ADC/DataADC.cpp[]
-----
+DataADC - реализует функции интерфейса IADC, переопределяя виртуальные функции.
+
+.DataADC
+image::DataADC.png[]
 
 === ICalculate и AngleCalculating
 
 * float CalculateAngle(float buffer) -- метод объявляется в интерфейсе и реализуется в классе. Метод пересчитывает код АЦП и возвращает значение угла в градусах.
 
-.ICalculate.h
+ICalculate - интерфейс, отвечающий за расчет угла из кода АЦП.
 
-[source, cpp]
-----
-include::CODE_for_kursach/Calculate/Contracts/ICalculate.h[]
-----
+.ICalculate
+image::ICalculate.png[]
 
-.AngleCalculating.h
-[source, cpp]
-----
-include::CODE_for_kursach/Calculate/AngleCalculating.h[]
-----
+AngleCalculating - реализует функции интерфейса ICalculate.
 
-.AngleCalculating.cpp
-[source, cpp]
-----
-include::CODE_for_kursach/Calculate/AngleCalculating.cpp[]
-----
+.AngleCalculating
+image::AngleCalculating.png[]
 
 === IFilter и Filter
 
@@ -637,66 +620,44 @@ include::CODE_for_kursach/Calculate/AngleCalculating.cpp[]
 * float mFilteredAngle -- поле, хранящее последнее отфильтрованное значение. Нужно для работы.
 * Filter() -- конструктор класса. Нужен для инициализации начального значения поля mFilteredAngle нулем.
 
-.IFilter.h
-[source, cpp]
-----
-include::CODE_for_kursach/Filter/Contracts/IFilter.h[]
-----
+IFilter - интерфейс, отвечает за фильтрацию данных угла
 
-.Filter.h
-[source, cpp]
-----
-include::CODE_for_kursach/Filter/Filter.h[]
-----
+.IFilter
+image::IFilter.png[]
 
-.Filter.cpp
-[source, cpp]
-----
-include::CODE_for_kursach/Filter/Filter.cpp[]
-----
+Filter - реализует функции интерфейса IFilter
+
+.Filter
+image::Filter.png[]
 
 === IConvert и FloatToUsart
 
 * void ConvertForUsart(float filteredValue, char* bufferValue) -- метод объявлен в интерфейсе и реализован в классе. Принимает значение угла и конвертирует его в строку для отправки по USART.
 
-.IConvert.h
-[source, cpp]
-----
-include::CODE_for_kursach/Converter/Contracts/IConvert.h[]
-----
+IConvert - интерфейс, отвечает за преобразование типа данных угла для передачи.
 
-.FloatToUsart.h
-[source, cpp]
-----
-include::CODE_for_kursach/Converter/FloatToUsart.h[]
-----
-.FloatToUsart.cpp
-[source, cpp]
-----
-include::CODE_for_kursach/Converter/FloatToUsart.cpp[]
-----
+.IConvert
+image::IConvert.png[]
+
+FloatToUsart - класс, реализует функции интерфейса IConvert (преобразование в строку).
+
+.FloatToUsart
+image::FloatToUsart.png[]
 
 === IUsart и Usart2Send
 
 *  void SendData(char* buffer) const -- метод объявлен в интерфейсе и реализован в классе. Реализует полный цикл отправки строки по USART с использованием регистров буфера данных и бита статуса регистра буфера данных.
 
-.IUsart.h
-[source, cpp]
-----
-include::CODE_for_kursach/Usart/Contracts/IUsart.h[]
-----
+IUsart - интерфейс, отвечает за отправку данных по USART.
 
-.Usart2Send.h
-[source, cpp]
-----
-include::CODE_for_kursach/Usart/Usart2Send.h[]
-----
+.IUsart
+image::IUsart.png[]
 
-.Usart2Send.cpp
-[source, cpp]
-----
-include::CODE_for_kursach/Usart/Usart2Send.cpp[]
-----
+Usart2Send - класс, реализует функции интерфейса IUsart для usart2
+
+.Usart2Send
+image::Usart2Send.png[]
+
 
 === DataRepository
 
@@ -704,55 +665,49 @@ float GetData() const -- метод получения данных репози
 void LoadData(float data) -- метод, записывающий в поле mData класса значение угла;
 float mData -- поле хранит данные между двумя тасками.
 
-.DataRepository.h
-[source, cpp]
-----
-include::CODE_for_kursach/Repository/DataRepository.h[]
-----
+DataRepository - класс, содержит в себе промежуточные значения для взаимодействия между задачами.
 
-.DataRepository.cpp
-[source, cpp]
-----
-include::CODE_for_kursach/Repository/DataRepository.cpp[]
-----
+.DataRepository
+image::DataRepository.png[]
 
-=== Tasks
+== Результаты работы
 
-=== TakeMeasurementTask
+=== Краткая характеристика реализации
 
-.TakeMeasurementTask.h
-[source, cpp]
-----
-include::CODE_for_kursach/Tasks/TakeMeasurementTask.h[]
-----
+В ходе выполнения курсовой работы разработана программа для микроконтроллера STM32F411RE (отладочная плата XNUCLEO-F411RE), реализующая следующие функции:
 
-.TakeMeasurementTask.cpp
-[source, cpp]
-----
-include::CODE_for_kursach/Tasks/TakeMeasurementTask.cpp[]
-----
+* Измерение аналогового сигнала с датчика положения AS5600 (замена TLE5009) через АЦП;
+* Вычисление угла поворота в градусах;
+* Цифровая фильтрация полученного значения (ФНЧ первого порядка);
+* Синхронизированное хранение данных между задачами с использованием мьютекса;
+* Периодическая отправка отфильтрованного угла по интерфейсу USART2 (скорость 19200 бит/с);
+* Работа под управлением ОСРВ FreeRTOS (через C++ обёртку OsWrapper).
 
-=== SendToUsartTask
+Работоспособность программы подтверждена экспериментально (фото). Программа соответствует требованиям технического задания.
 
-.SendToUsartTask.h
-[source, cpp]
-----
-include::CODE_for_kursach/Tasks/TakeMeasurementTask.h[]
-----
+На рисунке ниже представлен датчик и магнит.
 
-.SendToUsartTask.cpp
-[source, cpp]
-----
-include::CODE_for_kursach/Tasks/SendToUsartTask.cpp[]
-----
+.Конструкция датчика с магнитом
+image::датчик.png[] 
 
-=== main
+Датчик подключен к плате через порт питания 3,3 В, землю и АЦП.
 
-.main.cpp
-[source, cpp]
-----
-include::CODE_for_kursach/main.cpp[]
-----
+Порядок работы:
+
+. Запуск кода (Рисунок 18);
+
+. В программе SerialTest (помогает распознать данные с АЦП) выбираем порт, выставляем скорость 19200 по заданию.
+
+. Смотрим результат (Рисунок 19)
+
+.Запущена передача данных, код работает
+image::передача данных.png[]
+
+.Результатик в программе
+image::результатик.png[]
+
+При повороте по часовой стрелке значение увеличивается, при повороте против часовой стрелки значение уменьшается.
+
 
 [bibliography]
 == Библиографический список
